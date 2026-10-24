@@ -422,6 +422,8 @@
  "walk_title": "Procházka",
  "walk_end": "Ukončit",
  "walk_hint": "Táhni: rozhlížej se · klepni na podlahu: dojdi tam · W A S D / šipky nebo páčka: chůze · Esc: ukončit",
+ "xr_vr": "VR: projít se domem",
+ "xr_ar": "AR: dům jako domeček pro panenky na stole",
  "card_next": "další krok …",
  "card_step_hole": "Otvorem",
  "card_step_fit": "Vestavět",

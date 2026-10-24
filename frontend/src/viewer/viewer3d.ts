@@ -71,6 +71,12 @@ import { buildRoof, type RoofWindowState } from "./roof.ts";
 import { GROUND, groundFace, groundFloor, roofFaces, roofWindowRoom, wallFaces } from "../solar.ts";
 import { buildSolarLive, solarLiveMaterial, writeSolarLevels, type SolarLive } from "./solar-live.ts";
 import { buildPools, disposePools, type PoolPiece } from "./pool-water.ts";
+import { XrRig, xrModes, type XrAction, type XrMode } from "./xr.ts";
+import { XrSigns, type SignSpec } from "./xr-signs.ts";
+import { xrHeadInWall, xrLanding, xrSlide } from "./xr-walk.ts";
+import { FloorMap } from "./walk.ts";
+
+export type { XrAction, XrMode } from "./xr.ts";
 import { accentOnUniform, accentUniform, parseAccent, lineBlending, themed, themeIndex, type Theme, type ThemeUniform } from "./theme.ts";
 
 export type { Theme } from "./theme.ts";
@@ -103,6 +109,8 @@ export interface ViewerOptions {
   onRoomDoubleTap?: (floorId: string, roomId: string) => void;
   /** Long press on a device marker. */
   onDeviceHold?: (entityId: string, x: number, y: number) => void;
+  /** A controller pointed at a device in VR/AR and pressed (no screen position: menus do not show there). */
+  onXrAction?: (entityId: string, action: XrAction) => void;
   /**
    * Vertical swipe on a device (dim a lamp, move a blind): "start" returns whether the device takes
    * it; "move" reports the distance from the start (pixels, down positive).
@@ -387,6 +395,10 @@ const LAMP_SHADE = 0x1d2946;
 const LOW_STRIP = 1.0;
 const HANGING = new Set<LampModel>(["ceiling", "downlight", "spot", "panel", "pendant", "fan", "strip"]);
 const FLASH_MS = 450;
+/** The id of the VR sign with the name of the room one stands in (no device behind it). */
+const XR_ROOM_SIGN = "neonplan3d:xr-room";
+/** Prefix of the VR signs with a located person's name (no device behind them either). */
+const XR_PERSON_SIGN = "neonplan3d:xr-person:";
 const EFFECT_MS = 125;
 /** Tablet level: light and sun follow a moving door or blind about 5 times a second (ms). */
 const LOW_LIGHT_MS = 200;
@@ -545,6 +557,15 @@ export class FloorplanViewer {
   private readonly scene = new Scene();
   private readonly camera = new PerspectiveCamera(38, 1, 0.1, 400);
   private controls: OrbitControls;
+  /** Immersive view (VR walk, AR doll's house); while it runs the headset drives the camera. */
+  private readonly xr = new XrRig(this.camera, this.scene, (t) => this.render(t), () => this.xrEnded());
+  /** The device pins as sprites while VR/AR runs. */
+  private xrSigns: XrSigns | null = null;
+  /** VR: the walk's floor maps (walls, doors) per floor, made again when the building changes. */
+  private xrMaps = new Map<string, FloorMap>();
+  private xrMapsOf: Building | null = null;
+  /** VR: the room the head stands in (its devices get signs). */
+  private xrRoom: Room | null = null;
   private readonly labels: HTMLDivElement;
   private readonly root = new Group();
   private readonly patternTexture: CanvasTexture;
@@ -1789,6 +1810,200 @@ export class FloorplanViewer {
     return fv ? fv.floor.elevation + fv.ty : 0;
   }
 
+  /** Immersive modes the browser offers (needs HTTPS and a headset). */
+  xrModes(): Promise<XrMode[]> {
+    return xrModes();
+  }
+
+  /**
+   * Enter VR (stand in the opened room, or where the view looks) or AR (the house as a doll's house on
+   * the table). Call it straight from a tap.
+   */
+  enterXR(mode: XrMode): Promise<void> {
+    this.xr.onPoint = (ray, action) => this.xrPoint(ray, action);
+    this.xr.onFloor = (dir) => this.xrFloor(dir);
+    this.labelsDirty = true;
+    this.wake();
+    const v = this.controls.view;
+    this.xrRoom = null;
+    if (mode === "vr") {
+      const anchor = new Vector3(v.target.x, this.floorBase(this.xrFloorId()), v.target.z);
+      let yaw = v.theta;
+      for (const fv of this.floors) {
+        const room = this.roomId ? fv.floor.rooms.find((r) => r.id === this.roomId) : undefined;
+        if (!room) continue;
+        const [x, z] = centroid(room.points);
+        anchor.set(x, fv.floor.elevation + fv.ty, z);
+      }
+      // like the walk: a free spot (the middle may hold a table), looking where the room is widest
+      const map = this.xrMap(this.xrFloorId());
+      if (map) {
+        const [x, z] = xrLanding(map, [anchor.x, anchor.z]);
+        anchor.x = x;
+        anchor.z = z;
+        // the walk's yaw is a direction in x/z, the rig's turns the real "forward" (−z) onto it
+        yaw = -Math.PI / 2 - map.openYaw([x, z]);
+      }
+      this.xr.constrain = (head, dx, dz) => {
+        const m = this.xrMap(this.xrFloorId());
+        return m ? xrSlide(m, head, dx, dz) : [dx, dz];
+      };
+      return this.xr.start(mode, this.renderer, { anchor, yaw, scale: 1 });
+    }
+    const box = new Box3();
+    for (const fv of this.floors) {
+      if (fv.to < 0.99) continue;
+      for (const room of fv.floor.rooms) for (const [x, z] of room.points) box.expandByPoint(new Vector3(x, fv.floor.elevation + fv.ty, z));
+    }
+    if (box.isEmpty()) box.set(new Vector3(-4, 0, -4), new Vector3(4, 2.5, 4));
+    const size = box.getSize(new Vector3());
+    const anchor = box.getCenter(new Vector3()).setY(box.min.y);
+    // about 60 cm across on the table
+    return this.xr.start(mode, this.renderer, { anchor, yaw: v.theta, scale: Math.max(1, Math.max(size.x, size.z) / 0.6) });
+  }
+
+  /** The walk's map of a floor (walls and doors), kept until the building changes. */
+  private xrMap(floorId: string | null): FloorMap | null {
+    const b = this.building;
+    if (!b || floorId === null) return null;
+    if (this.xrMapsOf !== b) {
+      this.xrMaps.clear();
+      this.xrMapsOf = b;
+    }
+    let map = this.xrMaps.get(floorId);
+    if (!map) {
+      const floor = b.floors.find((f) => f.id === floorId);
+      if (!floor) return null;
+      map = new FloorMap(b, floor);
+      this.xrMaps.set(floorId, map);
+    }
+    return map;
+  }
+
+  /** VR walking, once a frame: darkness while the head stands in a wall, signs follow the room. */
+  private xrWalls(): void {
+    const map = this.xr.mode === "vr" && !this.xr.flying ? this.xrMap(this.xrFloorId()) : null;
+    const head = this.xr.headAt();
+    this.xr.setBlind(!!map && xrHeadInWall(map, head));
+    const room = map?.roomAt(head) ?? null;
+    if (room !== this.xrRoom) {
+      this.xrRoom = room;
+      this.labelsDirty = true;
+    }
+  }
+
+  /** Signs of the devices on the shown floors, sized for the headset (a doll's house gets small ones). */
+  private placeSigns(): void {
+    if (!this.xrSigns) {
+      this.xrSigns = new XrSigns();
+      this.scene.add(this.xrSigns.group);
+    }
+    const specs: SignSpec[] = [];
+    const room = this.xr.mode === "vr" ? this.xrRoom : null;
+    if (room) {
+      // the room's name hangs over its middle, as the walk shows it at the top
+      const [x, z] = centroid(room.points);
+      specs.push({ id: XR_ROOM_SIGN, icon: "", text: room.name, name: "", active: false, unavailable: false, glow: "", x, y: this.floorBase(this.xrFloorId()) + 2.1, z });
+    }
+    // located people: their figure stands where they are (facing the head), their name hangs above it
+    const head = this.camera.getWorldPosition(new Vector3());
+    for (const p of this.persons) {
+      const fv = this.floorMap.get(p.floorId);
+      const fig = this.figures.get(p.id);
+      const shown = !!fv && fv.to >= 0.99 && fv.o >= 0.9 && !this.otherFloor(fv) && (!room || pointInPolygon([p.x, p.z], room.points));
+      if (fig) {
+        fig.visible = shown;
+        if (shown) {
+          fig.position.set(p.x, fv.floor.elevation + fv.y, p.z);
+          fig.rotation.y = Math.atan2(head.x - p.x, head.z - p.z);
+        }
+      }
+      if (!shown) continue;
+      specs.push({
+        id: XR_PERSON_SIGN + p.id,
+        icon: "",
+        text: p.tag || p.name,
+        name: "",
+        active: false,
+        unavailable: false,
+        glow: p.color ?? "#ff5fd2",
+        x: p.x,
+        y: fv.floor.elevation + fv.y + (fig ? 1.95 : 1.1),
+        z: p.z,
+      });
+    }
+    for (const d of this.devices) {
+      const fv = this.floorMap.get(d.floorId);
+      if (!fv || fv.to < 0.99 || fv.o < 0.9 || d.pin === false || this.otherFloor(fv)) continue;
+      // walking in VR: like the walk's glass cards, only the room one stands in (walls hide the rest)
+      if (room && !pointInPolygon([d.x, d.z], room.points)) continue;
+      const pin = this.devicePins.get(d.id);
+      specs.push({
+        id: d.id,
+        icon: d.icon,
+        text: [d.text, pin?.watt].filter(Boolean).join(" · "),
+        name: d.caption || d.name,
+        active: d.active,
+        unavailable: d.unavailable,
+        glow: pin?.glow ?? "",
+        x: d.x,
+        y: fv.floor.elevation + fv.y + d.y,
+        z: d.z,
+      });
+    }
+    // about 24 cm wide when walking through; on the doll's house 6 cm at the start, growing and shrinking with it
+    this.xrSigns.update(specs, this.xr.mode === "ar" ? 0.06 * this.xr.startScale : 0.24);
+  }
+
+  /** A controller pressed while pointing: a sign first, else whatever the ray meets in the building. */
+  private xrPoint(ray: Raycaster, action: XrAction): void {
+    const entity = this.xrSigns?.pick(ray, this.camera) ?? this.pickRay(ray);
+    if (!entity || typeof entity !== "string" || entity.startsWith("neonplan3d:")) return;
+    this.flashes.set(entity, performance.now() + FLASH_MS);
+    this.options.onXrAction?.(entity, action);
+  }
+
+  /** Floors from the bottom up. */
+  private floorIds(): string[] {
+    return [...this.floors].sort((a, b) => a.floor.elevation - b.floor.elevation).map((f) => f.floor.id);
+  }
+
+  /** The floor the feet stand on in VR: the opened one, else the lowest. */
+  private xrFloorId(): string | null {
+    return this.floorId ?? this.floorIds()[0] ?? null;
+  }
+
+  /** VR: the floor above or below opens and the feet go with it. AR: house, each floor, house again. */
+  private xrFloor(dir: 1 | -1): void {
+    const ids = this.floorIds();
+    if (!ids.length) return;
+    if (this.xr.mode === "ar") {
+      const i = this.floorId === null ? -1 : ids.indexOf(this.floorId);
+      if (i + 1 >= ids.length) this.options.onBack?.();
+      else this.options.onFloorTap?.(ids[i + 1]);
+      return;
+    }
+    const cur = ids.indexOf(this.xrFloorId() ?? "");
+    const next = ids[Math.max(0, Math.min(ids.length - 1, cur + dir))];
+    if (next === this.floorId) return;
+    this.xr.flying = false;
+    // the same spot one floor up or down, or the nearest free one when a wall stands there
+    const map = this.xrMap(next);
+    if (map) {
+      const [x, z] = xrLanding(map, this.xr.headAt());
+      this.xr.moveHeadTo(x, z);
+    }
+    this.options.onFloorTap?.(next);
+  }
+
+  private xrEnded(): void {
+    this.xrSigns?.dispose();
+    this.xrSigns = null;
+    this.applyWeather();
+    this.labelsDirty = true;
+    this.resize();
+  }
+
   /** Lab prototype: cameras whose current picture is cast onto the plan (an empty list ends it). */
   private projections = new CameraProjections(() => this.invalidate());
 
@@ -1831,6 +2046,7 @@ export class FloorplanViewer {
   }
 
   dispose(): void {
+    this.xr.stop();
     this.projections.dispose();
     this.disposed = true;
     cancelAnimationFrame(this.frame);
@@ -1879,7 +2095,7 @@ export class FloorplanViewer {
   }
 
   invalidate(): void {
-    if (this.frame || this.disposed || document.hidden || !this.onScreen) return;
+    if (this.frame || this.disposed || document.hidden || !this.onScreen || this.xr.mode) return;
     this.frame = requestAnimationFrame((t) => this.render(t));
   }
 
@@ -1926,6 +2142,8 @@ export class FloorplanViewer {
   };
 
   private resize(): void {
+    // the headset sets the size while it presents
+    if (this.xr.mode) return;
     const w = this.host.clientWidth || 1;
     const h = this.host.clientHeight || 1;
     this.size = { w, h };
@@ -3883,7 +4101,16 @@ export class FloorplanViewer {
   }
 
   private pick(x: number, y: number): { entity: string } | { floorId: string; roomId: string | null } | null {
-    const ray = this.rayAt(x, y);
+    return this.pickHit(this.rayAt(x, y));
+  }
+
+  /** The entity a ray meets (lamp, linked furniture or opening), rooms aside. */
+  private pickRay(ray: Raycaster): string | null {
+    const hit = this.pickHit(ray);
+    return hit && "entity" in hit ? hit.entity : null;
+  }
+
+  private pickHit(ray: Raycaster): { entity: string } | { floorId: string; roomId: string | null } | null {
     const floors = this.activeFloors();
     const meshes = floors.flatMap((f) => [f.lampMesh, f.coneMesh, f.framesMesh, f.glassMesh, f.blindsMesh, f.wallMesh, f.floorMesh].filter((m) => m.visible));
     const inRange = (list: { id: string; start: number; end: number }[], tri: number) => list.find((r) => tri >= r.start && tri < r.end)?.id;
@@ -4667,12 +4894,21 @@ export class FloorplanViewer {
     if (this.disposed) return;
     const dt = this.lastFrame ? Math.min(100, now - this.lastFrame) : 16;
     let orbiting = false;
-    if (this.orbitSpeed && !this.controls.active) {
+    const xr = this.xr.mode;
+    if (xr) this.xr.step(now);
+    // walking: the feet stay on their floor, also while it moves (opening, closing)
+    if (xr === "vr" && !this.xr.flying) this.xr.setHeight(this.floorBase(this.xrFloorId()));
+    if (xr) {
+      // nobody touches the screen in the headset: the tablet level's decorations must not rest
+      this.lastWake = now;
+      this.xrWalls();
+    }
+    if (this.orbitSpeed && !this.controls.active && !xr) {
       if (this.orbitLast) this.controls.view.theta += (this.orbitSpeed * Math.min(100, now - this.orbitLast)) / 1000;
       this.orbitLast = now;
       orbiting = true;
     } else this.orbitLast = 0;
-    const cameraMoving = this.controls.update(now);
+    const cameraMoving = !xr && this.controls.update(now);
     const floorsMoving = this.stepFloors(dt);
     const openingsMoving = this.stepOpenings(dt) || this.stepFridges(dt);
     let flashing = false;
@@ -4713,11 +4949,21 @@ export class FloorplanViewer {
     this.flowTime.value = this.flowSeconds();
     if (this.soundActive) this.animateSound(now);
     this.updateWalls();
+    if (xr === "ar") {
+      // the room around shows through: no fog or sun disc at doll's house scale
+      this.scene.fog = null;
+      this.skyDisc.visible = false;
+    }
     if (this.projections.active) this.updateProjections();
     this.renderer.render(this.scene, this.camera);
     this.disposeRetired();
     // labels are placed only when the view or something on it moved (style writes cost layout)
-    if (this.viewChanged() || floorsMoving || this.labelsDirty) {
+    if (xr) {
+      if (!this.xrSigns || floorsMoving || this.labelsDirty) {
+        this.labelsDirty = false;
+        this.placeSigns();
+      }
+    } else if (this.viewChanged() || floorsMoving || this.labelsDirty) {
       this.labelsDirty = false;
       this.updateLabels();
     }
@@ -4800,8 +5046,9 @@ export class FloorplanViewer {
    * stay visible); in the cut view every wall is cut at the cut height.
    */
   private updateWalls(): void {
-    const cam = this.camera.position;
-    const t = this.controls.view.target;
+    const xr = this.xr.mode;
+    const cam = xr ? this.camera.getWorldPosition(new Vector3()) : this.camera.position;
+    const t = xr === "ar" ? this.xr.anchor : this.controls.view.target;
     const dx = cam.x - t.x;
     const dz = cam.z - t.z;
     const l = Math.hypot(dx, dz) || 1;
@@ -4812,7 +5059,8 @@ export class FloorplanViewer {
       let glass = 0;
       fv.geo.buckets.forEach((normal, b) => {
         const facing = normal ? (normal[0] * dx) / l + (normal[1] * dz) / l >= 0.25 : inRoom;
-        if (!cut && facing) glass |= 1 << b;
+        // walking through the house in vr every wall stands
+        if (!cut && facing && xr !== "vr") glass |= 1 << b;
       });
       fv.mask.standing.value = cut ? 0 : 0xffff;
       fv.mask.glass.value = glass;

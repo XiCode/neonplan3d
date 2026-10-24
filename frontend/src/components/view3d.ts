@@ -130,7 +130,7 @@ import { floorCounts, floorInfoText, locatedPersons, personLook, personsInRooms,
 import { controls, tokens } from "../styles.ts";
 import type { HassEntity, HomeAssistant } from "../types.ts";
 import { countView, diagnosticsActive, recordFrame, watchDiagnostics } from "../diagnostics.ts";
-import type { DeviceMarker, FloorplanViewer, FloorStack, RobotInfo, Quality, ScreenState, SoundSource, SurfaceGrab, ViewerStats, WallMode } from "../viewer/viewer3d.ts";
+import type { DeviceMarker, FloorplanViewer, FloorStack, RobotInfo, Quality, ScreenState, SoundSource, SurfaceGrab, ViewerStats, WallMode, XrAction, XrMode } from "../viewer/viewer3d.ts";
 import { wallLayout } from "../camera-wall.ts";
 import { watchedEntities } from "../watched.ts";
 import { backdropCss } from "../backdrop.ts";
@@ -263,6 +263,7 @@ export class Fp3dView3d extends LitElement {
     autoOrbit: { attribute: false },
     startView: { attribute: false },
     _low: { state: true },
+    _xr: { state: true },
     _micProbe: { state: true },
     _narrowStage: { state: true },
     _alerts: { state: true },
@@ -426,6 +427,8 @@ export class Fp3dView3d extends LitElement {
   private declare _thumbs: { floorId: string; url: string }[];
   /** The viewer runs at the tablet level: heavy CSS effects are left out as well. */
   private declare _low: boolean;
+  /** Immersive modes the browser offers (VR walk, AR doll's house); empty without HTTPS or a headset. */
+  private declare _xr: XrMode[];
   /** A room panel (or sheet) is open next to the view: on small screens the view's own controls hide. */
   declare panelOpen: boolean;
   /** The floor pictures, star, search and eye on the right instead of the left (#285). */
@@ -647,6 +650,7 @@ export class Fp3dView3d extends LitElement {
     this.roomLabels = true;
     this.floorStack = "dim";
     this._low = false;
+    this._xr = [];
     this.panelOpen = false;
     this.controlsRight = false;
     this.keepView = false;
@@ -832,6 +836,7 @@ export class Fp3dView3d extends LitElement {
         onBack: () => this.fire("back", {}),
         onDeviceTap: (id, x, y) => this.onDeviceTap(id, x, y),
         onDeviceHold: (id, x, y) => this.onDeviceHold(id, x, y),
+        onXrAction: (id, action) => this.onXrAction(id, action),
         onRoomDoubleTap: (floorId, roomId) => this.onRoomDoubleTap(floorId, roomId),
         onDeviceSwipe: (id, phase, dy, x, y) => this.onDeviceSwipe(id, phase, dy, x, y),
         onFurnitureSelect: (id) => this.fire("furniture-select", { id }),
@@ -860,6 +865,7 @@ export class Fp3dView3d extends LitElement {
       this.viewer.setKeepRoof(this.keepRoof);
       this.viewer.setHideRoof(this.hideRoof);
       this._low = this.viewer.low;
+      void this.viewer.xrModes().then((m) => (this._xr = m));
       this.viewer.setPacks([...getPacks()]);
       if (this.hass) void syncModules(this.hass, getPacks()).then(() => this.syncDevices(true));
       this.shownPacks = packsVersion();
@@ -3954,10 +3960,13 @@ export class Fp3dView3d extends LitElement {
     if (!this.walkable || this.ro || !this.building || !this.hass) return nothing;
     const t = (k: I18nKey) => translate(this.hass, k);
     if (!this._walk)
-      return html`<button class="fp3d-walk-btn" title=${t("walk_start")} aria-label=${t("walk_start")} @click=${() => void this.startWalk()}>
-        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="13" cy="4.5" r="1.8" /><path d="m9 20 2.5-6 2.5 2.5V21M7.5 11l3-3.5 3.5 1.5 2 3.5M11.5 14l1-5" /></svg>
-        <span>${t("walk_title")}</span>
-      </button>`;
+      return html`<div class="fp3d-walk-bar">
+        ${this.renderXr()}
+        <button class="fp3d-walk-btn" title=${t("walk_start")} aria-label=${t("walk_start")} @click=${() => void this.startWalk()}>
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="13" cy="4.5" r="1.8" /><path d="m9 20 2.5-6 2.5 2.5V21M7.5 11l3-3.5 3.5 1.5 2 3.5M11.5 14l1-5" /></svg>
+          <span>${t("walk_title")}</span>
+        </button>
+      </div>`;
     const w = this._walk;
     // the stick (tablets): forward and back, turning left and right
     let stick: { id: number; cx: number; cy: number } | null = null;
@@ -4167,6 +4176,18 @@ export class Fp3dView3d extends LitElement {
         ? svg`<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M12 6a9.8 9.8 0 0 1 9 6 9.8 9.8 0 0 1-9 6 9.8 9.8 0 0 1-9-6 9.8 9.8 0 0 1 9-6m0 2a4 4 0 1 0 0 8 4 4 0 0 0 0-8m0 2a2 2 0 1 1 0 4 2 2 0 0 1 0-4" /></svg>`
         : svg`<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M2.4 3.8 3.8 2.4l17.8 17.8-1.4 1.4-3.3-3.3A10.5 10.5 0 0 1 12 19a9.8 9.8 0 0 1-9-6 10.3 10.3 0 0 1 3.6-4.3L2.4 3.8M12 7a4 4 0 0 1 4 4c0 .5-.1 1-.3 1.5l-5.2-5.2c.5-.2 1-.3 1.5-.3m-4 4a4 4 0 0 0 5.5 3.7l-5.2-5.2c-.2.5-.3 1-.3 1.5m4-7a9.8 9.8 0 0 1 9 6 10 10 0 0 1-2.6 3.6l-1.4-1.4A8 8 0 0 0 18.8 12 8 8 0 0 0 9.6 7.2L8 5.6A10.3 10.3 0 0 1 12 4" /></svg>`}
     </button>`;
+  }
+
+  /** VR and AR beside the walk's pill: the same walk with a headset, or the house on the table. */
+  private renderXr() {
+    if (!this._xr.length || !this.hass || this._find !== null) return nothing;
+    const enter = (mode: XrMode) => {
+      this.viewer?.enterXR(mode).catch((e: unknown) => console.warn("neonplan3d: XR session failed", e));
+    };
+    return this._xr.map((mode) => {
+      const label = translate(this.hass, mode === "vr" ? "xr_vr" : "xr_ar");
+      return html`<button class="fp3d-walk-btn fp3d-walk-xr" title=${label} aria-label=${label} @click=${() => enter(mode)}>${mode === "vr" ? "VR" : "AR"}</button>`;
+    });
   }
 
   /** Voice control: the microphone button and what was heard or answered. */
@@ -4992,6 +5013,58 @@ export class Fp3dView3d extends LitElement {
   }
 
   /**
+   * A controller in VR/AR: the trigger toggles (lights, switches, fans, blinds, heating, players), A/B step
+   * up and down (brightness, blind position, target temperature, fan speed, volume). No menus or dialogs
+   * show in the headset, so devices that ask for confirmation and locks are left alone.
+   */
+  private onXrAction(entityId: string, action: XrAction): void {
+    const hass = this.hass;
+    if (!hass || this.ro) return;
+    // a door or window: the trigger runs its drive like a tap does (a pulse switch or button presses, #677)
+    if (entityId.startsWith("opening:")) {
+      const drive = this.openingLinks?.get(entityId.slice(8))?.cover;
+      if (!drive || action !== "toggle" || drive.startsWith("cover.")) {
+        if (drive?.startsWith("cover.")) this.onXrAction(drive, action);
+        return;
+      }
+      const st = hass.states[drive];
+      if (!st || isUnavailable(st) || this.confirmSet.has(drive)) return;
+      const [domain] = drive.split(".");
+      void Promise.resolve(hass.callService(domain, domain === "switch" ? "turn_on" : "press", { entity_id: drive })).catch((err: unknown) =>
+        this.serviceFailed(`${domain}.press`, err),
+      );
+      return;
+    }
+    if (entityId.includes(":") || this.confirmSet.has(entityId)) return;
+    const st = hass.states[entityId];
+    if (!st || isUnavailable(st)) return;
+    const domain = entityId.slice(0, entityId.indexOf("."));
+    const kind = kindOf(entityId);
+    const call = (service: string, data: Record<string, unknown> = {}) =>
+      void Promise.resolve(hass.callService(domain, service, { entity_id: entityId, ...data })).catch((err: unknown) => this.serviceFailed(`${domain}.${service}`, err));
+    const up = action === "up";
+    if (action === "toggle") {
+      if (kind && TOGGLE_KINDS.has(kind)) void toggleEntity(hass, entityId);
+      else if (kind === "cover" || kind === "climate") call("toggle");
+      else if (kind === "media") call("media_play_pause");
+      return;
+    }
+    const a = st.attributes;
+    if (kind === "light") call("turn_on", { brightness_step_pct: up ? 10 : -10 });
+    else if (kind === "cover") {
+      const pos = typeof a.current_position === "number" ? a.current_position : null;
+      if (pos === null) call(up ? "open_cover" : "close_cover");
+      else call("set_cover_position", { position: Math.max(0, Math.min(100, Math.round(pos / 10) * 10 + (up ? 10 : -10))) });
+    } else if (kind === "climate" && typeof a.temperature === "number") {
+      const step = typeof a.target_temp_step === "number" ? a.target_temp_step : 0.5;
+      const min = typeof a.min_temp === "number" ? a.min_temp : 5;
+      const max = typeof a.max_temp === "number" ? a.max_temp : 35;
+      call("set_temperature", { temperature: Math.max(min, Math.min(max, a.temperature + (up ? step : -step))) });
+    } else if (kind === "fan") call(up ? "increase_speed" : "decrease_speed");
+    else if (kind === "media") call(up ? "volume_up" : "volume_down");
+  }
+
+  /**
    * A tap on a door with a smart lock: its menu offers to lock or unlock (asking first, #682). A tap on a garage door
    * driven by a pulse switch or button presses it – asking first when the door is marked so (#677); a long press
    * opens the drive's details.
@@ -5782,11 +5855,15 @@ export class Fp3dView3d extends LitElement {
         width: 104px;
       }
       /* at the top right, clear of the floor pictures and the switch rows (a card moves it beside its own buttons) */
-      .fp3d-walk-btn {
+      .fp3d-walk-bar {
         position: absolute;
         z-index: 3;
         top: 12px;
         right: var(--fp3d-walk-right, 12px);
+        display: flex;
+        gap: 8px;
+      }
+      .fp3d-walk-btn {
         height: 38px;
         display: flex;
         align-items: center;
@@ -5801,6 +5878,10 @@ export class Fp3dView3d extends LitElement {
         color: var(--fp3d-text);
         box-shadow: var(--fp3d-shadow);
         cursor: pointer;
+      }
+      .fp3d-walk-xr {
+        padding: 0 12px;
+        letter-spacing: 0.04em;
       }
       .fp3d-walk-surface {
         position: absolute;

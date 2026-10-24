@@ -422,6 +422,8 @@
  "walk_title": "漫游",
  "walk_end": "结束",
  "walk_hint": "拖动：环顾四周 · 点击地面：走过去 · W A S D / 方向键或摇杆：行走 · Esc：结束",
+ "xr_vr": "VR：在房子里走动",
+ "xr_ar": "AR：把房子当作玩具屋放在桌上",
  "card_next": "下一步…",
  "card_step_hole": "穿过开孔",
  "card_step_fit": "装入",

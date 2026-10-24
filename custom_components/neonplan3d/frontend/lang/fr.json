@@ -422,6 +422,8 @@
  "walk_title": "Visite",
  "walk_end": "Terminer",
  "walk_hint": "Glisser : regarder · toucher le sol : y aller · Z Q S D / flèches ou le joystick : marcher · Échap : terminer",
+ "xr_vr": "VR : se promener dans la maison",
+ "xr_ar": "AR : la maison en maison de poupée sur la table",
  "card_next": "étape suivante …",
  "card_step_hole": "Par un trou",
  "card_step_fit": "Monter",

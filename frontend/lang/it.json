@@ -422,6 +422,8 @@
  "walk_title": "Giro",
  "walk_end": "Fine",
  "walk_hint": "Trascina: guardati intorno · tocca il pavimento: vai lì · W A S D / frecce o il joystick: cammina · Esc: fine",
+ "xr_vr": "VR: camminare per la casa",
+ "xr_ar": "AR: la casa come casa delle bambole sul tavolo",
  "card_next": "passo successivo …",
  "card_step_hole": "Attraverso un foro",
  "card_step_fit": "Montare",

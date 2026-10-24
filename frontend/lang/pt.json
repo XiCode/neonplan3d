@@ -422,6 +422,8 @@
  "walk_title": "Passeio",
  "walk_end": "Terminar",
  "walk_hint": "Arrastar: olhar à volta · tocar no chão: ir até lá · W A S D / setas ou o joystick: andar · Esc: terminar",
+ "xr_vr": "VR: percorrer a casa",
+ "xr_ar": "AR: a casa como casa de bonecas sobre a mesa",
  "card_next": "próximo passo …",
  "card_step_hole": "Por um furo",
  "card_step_fit": "Instalar",

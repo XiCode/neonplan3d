@@ -422,6 +422,8 @@
  "walk_title": "Spacer",
  "walk_end": "Zakończ",
  "walk_hint": "Przeciągnij: rozglądaj się · dotknij podłogi: idź tam · W A S D / strzałki lub drążek: chodzenie · Esc: zakończ",
+ "xr_vr": "VR: spacer po domu",
+ "xr_ar": "AR: dom jako domek dla lalek na stole",
  "card_next": "następny krok …",
  "card_step_hole": "Przez otwór",
  "card_step_fit": "Wbuduj",

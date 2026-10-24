@@ -422,6 +422,8 @@
  "walk_title": "Séta",
  "walk_end": "Befejezés",
  "walk_hint": "Húzás: körülnézés · koppintás a padlóra: odasétálás · W A S D / nyilak vagy a kar: séta · Esc: befejezés",
+ "xr_vr": "VR: séta a házban",
+ "xr_ar": "AR: a ház babaházként az asztalon",
  "card_next": "következő lépés …",
  "card_step_hole": "Egy lyukon át",
  "card_step_fit": "Beépítés",

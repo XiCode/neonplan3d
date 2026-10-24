@@ -422,6 +422,8 @@
  "walk_title": "Kierros",
  "walk_end": "Lopeta",
  "walk_hint": "Vedä: katsele · napauta lattiaa: kävele sinne · W A S D / nuolet tai sauva: kävele · Esc: lopeta",
+ "xr_vr": "VR: kävele talon läpi",
+ "xr_ar": "AR: talo nukkekotina pöydällä",
  "card_next": "seuraava vaihe …",
  "card_step_hole": "Reiän läpi",
  "card_step_fit": "Asenna",

@@ -422,6 +422,8 @@
  "walk_title": "Rundtur",
  "walk_end": "Afslut",
  "walk_hint": "Træk: se dig omkring · tryk på gulvet: gå derhen · W A S D / piletaster eller pinden: gå · Esc: afslut",
+ "xr_vr": "VR: gå gennem huset",
+ "xr_ar": "AR: huset som dukkehus på bordet",
  "card_next": "næste trin …",
  "card_step_hole": "Gennem et hul",
  "card_step_fit": "Indbyg",

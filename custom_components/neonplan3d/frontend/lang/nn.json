@@ -422,6 +422,8 @@
  "walk_title": "Omvising",
  "walk_end": "Avslutt",
  "walk_hint": "Dra: sjå deg rundt · trykk på golvet: gå dit · W A S D / piltastar eller spaken: gå · Esc: avslutt",
+ "xr_vr": "VR: gå gjennom huset",
+ "xr_ar": "AR: huset som dokkehus på bordet",
  "card_next": "neste steg …",
  "card_step_hole": "Gjennom eit hol",
  "card_step_fit": "Bygg inn",

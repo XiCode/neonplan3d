@@ -422,6 +422,8 @@
  "walk_title": "Sprehod",
  "walk_end": "Končaj",
  "walk_hint": "Povleci: razgledovanje · tapni tla: pojdi tja · W A S D / puščice ali palica: hoja · Esc: končaj",
+ "xr_vr": "VR: sprehod skozi hišo",
+ "xr_ar": "AR: hiša kot hiška za punčke na mizi",
  "card_next": "naslednji korak …",
  "card_step_hole": "Skozi luknjo",
  "card_step_fit": "Vgradi",

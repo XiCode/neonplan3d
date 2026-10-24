@@ -422,6 +422,8 @@
  "walk_title": "Rondgang",
  "walk_end": "Stoppen",
  "walk_hint": "Slepen: rondkijken · op de vloer tikken: erheen lopen · W A S D / pijltjes of de joystick: lopen · Esc: stoppen",
+ "xr_vr": "VR: door het huis lopen",
+ "xr_ar": "AR: het huis als poppenhuis op tafel",
  "card_next": "volgende stap …",
  "card_step_hole": "Door een gat",
  "card_step_fit": "Inbouwen",

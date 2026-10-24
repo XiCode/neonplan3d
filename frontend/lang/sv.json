@@ -422,6 +422,8 @@
  "walk_title": "Rundtur",
  "walk_end": "Avsluta",
  "walk_hint": "Dra: se dig om · tryck på golvet: gå dit · W A S D / piltangenter eller spaken: gå · Esc: avsluta",
+ "xr_vr": "VR: gå genom huset",
+ "xr_ar": "AR: huset som dockskåp på bordet",
  "card_next": "nästa steg …",
  "card_step_hole": "Genom ett hål",
  "card_step_fit": "Bygg in",

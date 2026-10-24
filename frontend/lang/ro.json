@@ -422,6 +422,8 @@
  "walk_title": "Plimbare",
  "walk_end": "Încheie",
  "walk_hint": "Trage: privește în jur · atinge podeaua: mergi acolo · W A S D / săgeți sau joystickul: mers · Esc: încheie",
+ "xr_vr": "VR: plimbare prin casă",
+ "xr_ar": "AR: casa ca o casă de păpuși pe masă",
  "card_next": "pasul următor …",
  "card_step_hole": "Printr-o gaură",
  "card_step_fit": "Montează",
